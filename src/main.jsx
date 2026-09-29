@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import './style.css';
+import './theme.css';
 import {convertXml} from './conversion.js';
 
 const reasons=['Devolución y Ajuste de precios','Devolución','Descuento','Bonificación','Crédito incobrable','Recupero de costo','Recupero de gasto','Ajuste de precio'];
@@ -114,6 +115,32 @@ const explainService=(content,status)=>{
   return `HTTP ${status}\n${safe?plain.slice(0,500):'El servicio respondió sin un mensaje legible.'}`;
 };
 
+const redactResponse=value=>{
+  // Conservamos el JSON completo, pero nunca exponemos tokens ni el base64 en pantalla.
+  if(Array.isArray(value))return value.map(redactResponse);
+  if(value&&typeof value==='object')return Object.fromEntries(
+    Object.entries(value).map(([key,item])=>[
+      key,
+      /^(token|access_token|password|authorization)$/i.test(key)
+        ?'[oculto]'
+        :/^(kude|xml)$/i.test(key)&&typeof item==='string'
+          ?`[archivo base64: ${item.length} caracteres]`
+          :redactResponse(item)
+    ])
+  );
+  return value;
+};
+
+const pdfFromBase64=encoded=>{
+  // El manual devuelve el KUDE como PDF codificado en base64.
+  const value=String(encoded||'').replace(/^data:application\/pdf;base64,/i,'').replace(/\s/g,'');
+  if(!value||!/^[A-Za-z0-9+/]*={0,2}$/.test(value))throw Error('El KUDE no contiene un PDF base64 válido.');
+  const binary=atob(value);
+  if(!binary.startsWith('%PDF-'))throw Error('La respuesta del KUDE no contiene un PDF válido.');
+  const bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
+  return URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
+};
+
 function App(){
   const [options,setOptions]=useState(initial);
   const [xml,setXml]=useState('');
@@ -132,6 +159,9 @@ function App(){
   const [replacement,setReplacement]=useState('');
   const [match,setMatch]=useState(0);
   const [tab,setTab]=useState('convertir');
+  // El tema vive solo en esta pestaña para no compartir preferencias entre clientes.
+  const [theme,setTheme]=useState(()=>window.matchMedia?.('(prefers-color-scheme: dark)').matches?'dark':'light');
+  const [showTicket,setShowTicket]=useState(false);
 
   const [authUrl,setAuthUrl]=useState('');
   const [sendUrl,setSendUrl]=useState('');
@@ -139,6 +169,16 @@ function App(){
   const [token,setToken]=useState('');
   const [payload,setPayload]=useState('');
   const [response,setResponse]=useState('');
+  const [consultUrl,setConsultUrl]=useState('');
+  const [docType,setDocType]=useState('FE');
+  const [docEst,setDocEst]=useState('');
+  const [docPoint,setDocPoint]=useState('');
+  const [docNumber,setDocNumber]=useState('');
+  const [docSeries,setDocSeries]=useState('');
+  const [consultResult,setConsultResult]=useState(null);
+  const [consultError,setConsultError]=useState('');
+  const [consultBusy,setConsultBusy]=useState(false);
+  const [kudeUrl,setKudeUrl]=useState('');
 
   const editor=useRef(null);
   const highlight=useRef(null);
@@ -147,6 +187,18 @@ function App(){
   const singleFile=useRef(null);
   const requestId=useRef(0);
   const integrationId=useRef(0);
+  const consultId=useRef(0);
+
+  useEffect(()=>()=>{if(kudeUrl)URL.revokeObjectURL(kudeUrl)},[kudeUrl]);
+  useEffect(()=>{document.documentElement.dataset.theme=theme},[theme]);
+  useEffect(()=>{
+    // Una consulta anterior no debe figurar como resultado de otro cliente/documento.
+    consultId.current++;
+    setConsultResult(null);
+    setConsultError('');
+    setKudeUrl('');
+    setShowTicket(false);
+  },[token,sendUrl,docType,docEst,docPoint,docNumber,docSeries]);
 
   useEffect(()=>{
     if(!xml.trim())return;
@@ -164,12 +216,17 @@ function App(){
 
   const clearClient=()=>{
     integrationId.current++;
+    consultId.current++;
     setAuthUrl('');
     setSendUrl('');
     setCredentials('{\n  "ruc": "",\n  "password": ""\n}');
     setToken('');
     setResponse('');
     setPayload('');
+    setConsultUrl('');
+    setConsultResult(null);
+    setConsultError('');
+    setKudeUrl('');
   };
 
   const load=file=>{
@@ -562,6 +619,57 @@ function App(){
     }
   }
 
+  async function consultDocument(operation,makeTicket=false){
+    // El manual usa tipOpe 2 para estado y tipOpe 4 para KUDE, ambos por POST.
+    const request=++consultId.current;
+    setConsultError('');
+    setConsultResult(null);
+    setKudeUrl('');
+    setShowTicket(false);
+    try{
+      const target=consultUrl.trim()||sendUrl.trim();
+      let url;
+      try{url=new URL(target)}catch{throw Error('Ingrese la URL de consulta /api/operation.')}
+      if(url.protocol!=='https:'||url.username||url.password||url.hash){
+        throw Error('La consulta requiere una URL HTTPS válida.');
+      }
+      const bearer=extractToken(token);
+      for(const [name,value,length] of [['Establecimiento',docEst,3],['Punto de expedición',docPoint,3],['Número de documento',docNumber,7]]){
+        if(!new RegExp(`^\\d{${length}}$`).test(value))throw Error(`${name}: ingrese ${length} dígitos.`);
+      }
+      const body={tipOpe:operation,dEst:docEst,dPunExp:docPoint,dNumDoc:docNumber,tipoDoc:docType};
+      // Para estado, la serie se informa vacía si el documento no tiene serie.
+      if(operation==='2')body.dSerieNum=docSeries;
+      setConsultBusy(true);
+      const started=performance.now();
+      const res=await fetch('/api/send',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({url:url.href,body:JSON.stringify(body),token:bearer})
+      });
+      const envelope=await res.json();
+      if(request!==consultId.current)return;
+      if(!res.ok)throw Error(envelope.error||`La consulta devolvió HTTP ${res.status}.`);
+      let data;
+      try{data=JSON.parse(envelope.body)}catch{throw Error(`El servicio devolvió HTTP ${envelope.status}, pero la respuesta no es JSON.`)}
+      if(typeof data==='string'){
+        try{data=JSON.parse(data)}catch{}
+      }
+      if(!data||typeof data!=='object'||Array.isArray(data))throw Error('El servicio no devolvió un objeto JSON de consulta.');
+      const elapsed=((performance.now()-started)/1000).toFixed(1);
+      const result={http:envelope.status,data:redactResponse(data),elapsed,operation};
+      if(operation==='4'&&envelope.status>=200&&envelope.status<300&&data.status==='success'){
+        const encoded=data.kude||data.response?.kude;
+        if(encoded)setKudeUrl(pdfFromBase64(encoded));
+      }
+      setConsultResult(result);
+      if(makeTicket&&envelope.status>=200&&envelope.status<300&&data.status==='success')setShowTicket(true);
+      setStatus(`Respuesta de consulta recibida en ${elapsed} s. Revise el estado informado por el servicio.`);
+    }catch(error){
+      if(request===consultId.current){setConsultError(error.message);setStatus('No se completó la consulta. Revise los datos y la respuesta del servicio.')}
+    }finally{if(request===consultId.current)setConsultBusy(false)}
+  }
+
   return (
     <div className="app">
       <header>
@@ -574,7 +682,8 @@ function App(){
           </p>
         </div>
 
-        <div className="tabs">
+        <div className="header-actions">
+        <div className="tabs" role="tablist" aria-label="Secciones del sistema">
           <button
             className={tab==='convertir'?'active':''}
             onClick={()=>setTab('convertir')}
@@ -587,7 +696,17 @@ function App(){
           >
             Integración y envío
           </button>
+          <button
+            className={tab==='consulta'?'active':''}
+            onClick={()=>setTab('consulta')}
+          >
+            Consulta de documento
+          </button>
         </div>
+        </div>
+        <button className="theme-toggle" type="button" onClick={()=>setTheme(theme==='light'?'dark':'light')} aria-label={`Activar modo ${theme==='light'?'oscuro':'claro'}`} title={`Activar modo ${theme==='light'?'oscuro':'claro'}`}>
+          <span aria-hidden="true">{theme==='light'?'☾':'☀'}</span>
+        </button>
       </header>
 
       {tab==='convertir'?(
@@ -948,7 +1067,7 @@ function App(){
             </div>
           </section>
         </main>
-      ):(
+      ):tab==='envio'?(
         <div className="sendgrid">
           <div className="card">
             <h2>01 · Autenticación</h2>
@@ -1089,10 +1208,81 @@ function App(){
             </small>
           </div>
         </div>
+      ):(
+        <section className="consult-layout">
+          <div className="card consult-form">
+            <h2>Consultar documento electrónico</h2>
+            <p className="hint">Se usa el token obtenido en «Integración y envío». La consulta se envía como POST al servicio de este cliente.</p>
+            <label>URL de consulta
+              <input value={consultUrl} onChange={e=>{consultId.current++;setConsultUrl(e.target.value);setConsultResult(null);setConsultError('');setKudeUrl('');setShowTicket(false)}} placeholder={sendUrl||'https://dominio/api/operation'}/>
+              <small>{!consultUrl&&sendUrl?'Se usará la URL de envío mientras este campo esté vacío.':'Ingrese la URL /api/operation del cliente.'}</small>
+            </label>
+            <div className="consult-fields">
+              <label>Tipo de documento
+                <select value={docType} onChange={e=>setDocType(e.target.value)}>
+                  <option value="FE">Factura electrónica (FE)</option>
+                  <option value="NCR">Nota de crédito (NCR)</option>
+                  <option value="NDE">Nota de débito (NDE)</option>
+                  <option value="REM">Remisión (REM)</option>
+                  <option value="AUT">Auto factura (AUT)</option>
+                </select>
+              </label>
+              <label>Establecimiento
+                <input inputMode="numeric" maxLength={3} placeholder="001" value={docEst} onChange={e=>setDocEst(e.target.value.replace(/\D/g,'').slice(0,3))}/>
+              </label>
+              <label>Punto de expedición
+                <input inputMode="numeric" maxLength={3} placeholder="001" value={docPoint} onChange={e=>setDocPoint(e.target.value.replace(/\D/g,'').slice(0,3))}/>
+              </label>
+              <label>Número del documento
+                <input inputMode="numeric" maxLength={7} placeholder="0000001" value={docNumber} onChange={e=>setDocNumber(e.target.value.replace(/\D/g,'').slice(0,7))}/>
+              </label>
+              <label>Serie (opcional para estado)
+                <input value={docSeries} onChange={e=>setDocSeries(e.target.value)} placeholder="Dejar vacío si no tiene serie"/>
+              </label>
+            </div>
+            <div className="consult-actions">
+              <button className="primary" disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('2')}>{consultBusy?'Consultando…':'Consultar estado'}</button>
+              <button disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('4')}>Obtener KUDE (PDF)</button>
+              <button disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('2',true)}>Generar ticket</button>
+            </div>
+            {!token.trim()&&<small>Primero genere un token en «Integración y envío».</small>}
+            {consultError&&<div role="alert" className="consult-alert">{consultError}</div>}
+          </div>
+          <div className="card consult-response">
+            <h2>Resultado de la consulta</h2>
+            {!consultResult&&<p>El estado y los datos del documento aparecerán aquí.</p>}
+            {consultResult&&<>
+              <div className="consult-meta"><span className={`http-pill ${consultResult.http>=400?'http-error':'http-ok'}`}>HTTP {consultResult.http}</span><span>{consultResult.elapsed} s</span></div>
+              {consultResult.data.status&&<p><strong>Operación:</strong> {String(consultResult.data.status)}</p>}
+              {consultResult.data.response?.Estado&&<p><strong>Estado del documento:</strong> {String(consultResult.data.response.Estado)}</p>}
+              {consultResult.data.response?.FechaRegistro&&<p><strong>Fecha de registro:</strong> {String(consultResult.data.response.FechaRegistro)}</p>}
+              {(consultResult.data.response?.DE?.CDC||consultResult.data.CDC)&&<p><strong>CDC:</strong> {String(consultResult.data.response?.DE?.CDC||consultResult.data.CDC)}</p>}
+              {consultResult.data.response?.DE?.Retorno?.Mensaje&&<p><strong>Respuesta SIFEN:</strong> {String(consultResult.data.response.DE.Retorno.Mensaje)}</p>}
+              {consultResult.data.message&&<p><strong>Mensaje:</strong> {typeof consultResult.data.message==='string'?consultResult.data.message:JSON.stringify(consultResult.data.message)}</p>}
+              {consultResult.operation==='2'&&showTicket&&<div className="ticket-actions"><button type="button" className="primary" onClick={()=>window.print()}>Imprimir ticket</button></div>}
+              {showTicket&&consultResult.operation==='2'&&<section className="ticket-print" aria-label="Ticket de consulta">
+                <h3>Consulta de documento electrónico</h3>
+                <p className="ticket-subtitle">Comprobante de consulta · No es documento fiscal</p>
+                <div><strong>Consultado:</strong> {new Date().toLocaleString('es-PY')}</div>
+                <div><strong>Documento:</strong> {docType} · {docEst}-{docPoint}-{docNumber}</div>
+                {docSeries&&<div><strong>Serie:</strong> {docSeries}</div>}
+                <div><strong>HTTP:</strong> {consultResult.http}</div>
+                {consultResult.data.response?.Estado&&<div><strong>Estado:</strong> {String(consultResult.data.response.Estado)}</div>}
+                {consultResult.data.response?.FechaRegistro&&<div><strong>Fecha de registro:</strong> {String(consultResult.data.response.FechaRegistro)}</div>}
+                {(consultResult.data.response?.DE?.CDC||consultResult.data.CDC)&&<div className="ticket-cdc"><strong>CDC:</strong> {String(consultResult.data.response?.DE?.CDC||consultResult.data.CDC)}</div>}
+                {consultResult.data.response?.DE?.Retorno?.Mensaje&&<div><strong>Mensaje:</strong> {String(consultResult.data.response.DE.Retorno.Mensaje)}</div>}
+                <p className="ticket-footer">Datos informados por el servicio de consulta.</p>
+              </section>}
+              <details><summary>Ver respuesta JSON completa</summary><pre>{JSON.stringify(consultResult.data,null,2)}</pre></details>
+              {kudeUrl&&<div className="kude-preview"><h3>Vista previa del KUDE</h3><a href={kudeUrl} download={`KUDE_${docEst}-${docPoint}-${docNumber}.pdf`}>Descargar KUDE en PDF</a><iframe title="KUDE del documento" src={kudeUrl}/></div>}
+              {consultResult.operation==='4'&&!kudeUrl&&consultResult.data.status==='success'&&<small>El servicio respondió correctamente, pero no devolvió un PDF en el campo kude.</small>}
+            </>}
+          </div>
+        </section>
       )}
 
-      <div className="status" role="status">
-        {status}
+      <div className={`status ${/error|fall|no se pudo|no se complet|revise la respuesta|faltan|inválid/i.test(status)?'status-error':/obtenid|recibid|cargad|generad|copiad/i.test(status)?'status-success':'status-info'}`} role="status">
+        <span className="status-icon" aria-hidden="true">{/error|fall|no se pudo|no se complet|revise la respuesta|faltan|inválid/i.test(status)?'!':/obtenid|recibid|cargad|generad|copiad/i.test(status)?'✓':'i'}</span>{status}
       </div>
     </div>
   );
