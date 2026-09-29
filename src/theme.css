@@ -84,17 +84,35 @@ input[type="checkbox"],.check input { accent-color: var(--accent); }
 .consult-response details { border-color: var(--border); background: var(--surface-alt); }
 .consult-response summary { color: var(--accent); }
 .consult-response pre { color: var(--text); }
+/* La consulta conserva su distribución también cuando el CSS base publicado es antiguo. */
+.consult-layout { display: grid; grid-template-columns: minmax(320px,.9fr) minmax(350px,1.1fr); gap: 18px; align-items: start; }
+.consult-form,.consult-response { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.consult-form h2,.consult-response h2 { margin: 0; }
+.consult-form label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 650; }
+.consult-form input,.consult-form select { width: 100%; min-width: 0; }
+.consult-form .hint { margin: 0; }
+.consult-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
+.consult-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+.consult-actions button { flex: 1; min-width: 150px; }
+.consult-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.consult-response p { overflow-wrap: anywhere; }
+.consult-response details { border: 1px solid var(--border); border-radius: 9px; padding: 12px; }
+.consult-response summary { cursor: pointer; font-weight: 650; }
+.consult-response pre { max-height: 340px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace,monospace; }
 .consult-alert { background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-text); padding: 14px; line-height: 1.5; }
 .http-pill { border-radius: 999px; font-weight: 700; padding: 5px 11px; }
 .http-ok { background: var(--success-bg); color: var(--success-text); }
 .http-error { background: var(--error-bg); color: var(--error-text); }
-.consult-actions button { min-width: 120px; }
 .kude-preview iframe { border-color: var(--border); background: #fff; }
+.kude-preview { display: flex; flex-direction: column; gap: 10px; }
+.kude-preview iframe { width: 100%; height: 600px; border-radius: 9px; }
 a { color: var(--accent); }
 .status { display: flex; align-items: center; gap: 9px; z-index: 10; border: 1px solid var(--border); background: var(--info-bg); color: var(--info-text); box-shadow: var(--shadow); font-weight: 600; line-height: 1.4; }
 .status-success { background: var(--success-bg); color: var(--success-text); }
 .status-error { background: var(--error-bg); color: var(--error-text); }
 .status-icon { display: inline-grid; flex-shrink: 0; place-items: center; width: 22px; height: 22px; border: 1px solid currentColor; border-radius: 50%; font-size: 12px; }
 @media(max-width: 900px) { header { align-items: flex-start; flex-direction: column; } .header-actions { width: 100%; } }
+@media(max-width: 900px) { .consult-layout { grid-template-columns: 1fr; } }
 @media(max-width: 700px) { .tabs { margin-top: 0; max-width: 100%; } .header-actions { align-items: stretch; } }
+@media(max-width: 550px) { .consult-fields { grid-template-columns: 1fr; } .kude-preview iframe { height: 430px; } }
 @media(prefers-reduced-motion: reduce) { button,input,select,textarea { transition: none; } }
