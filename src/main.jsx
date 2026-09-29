@@ -1243,7 +1243,6 @@ function App(){
             <div className="consult-actions">
               <button className="primary" disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('2')}>{consultBusy?'Consultando…':'Consultar estado'}</button>
               <button disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('4')}>Obtener KUDE (PDF)</button>
-              <button disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('2',true)}>Generar ticket</button>
             </div>
             {!token.trim()&&<small>Primero genere un token en «Integración y envío».</small>}
             {consultError&&<div role="alert" className="consult-alert">{consultError}</div>}
