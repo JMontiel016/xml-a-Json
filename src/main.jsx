@@ -161,7 +161,6 @@ function App(){
   const [tab,setTab]=useState('convertir');
   // El tema vive solo en esta pestaña para no compartir preferencias entre clientes.
   const [theme,setTheme]=useState(()=>window.matchMedia?.('(prefers-color-scheme: dark)').matches?'dark':'light');
-  const [showTicket,setShowTicket]=useState(false);
 
   const [authUrl,setAuthUrl]=useState('');
   const [sendUrl,setSendUrl]=useState('');
@@ -197,7 +196,6 @@ function App(){
     setConsultResult(null);
     setConsultError('');
     setKudeUrl('');
-    setShowTicket(false);
   },[token,sendUrl,docType,docEst,docPoint,docNumber,docSeries]);
 
   useEffect(()=>{
@@ -619,13 +617,12 @@ function App(){
     }
   }
 
-  async function consultDocument(operation,makeTicket=false){
+  async function consultDocument(operation){
     // El manual usa tipOpe 2 para estado y tipOpe 4 para KUDE, ambos por POST.
     const request=++consultId.current;
     setConsultError('');
     setConsultResult(null);
     setKudeUrl('');
-    setShowTicket(false);
     try{
       const target=consultUrl.trim()||sendUrl.trim();
       let url;
@@ -663,7 +660,6 @@ function App(){
         if(encoded)setKudeUrl(pdfFromBase64(encoded));
       }
       setConsultResult(result);
-      if(makeTicket&&envelope.status>=200&&envelope.status<300&&data.status==='success')setShowTicket(true);
       setStatus(`Respuesta de consulta recibida en ${elapsed} s. Revise el estado informado por el servicio.`);
     }catch(error){
       if(request===consultId.current){setConsultError(error.message);setStatus('No se completó la consulta. Revise los datos y la respuesta del servicio.')}
@@ -673,13 +669,17 @@ function App(){
   return (
     <div className="app">
       <header>
-        <div>
-          <span className="eyebrow">FACTURACIÓN ELECTRÓNICA</span>
-          <h1>Generador de notas de crédito</h1>
-          <p>
-            Cargue una factura electrónica, complete los datos de la nota de crédito
-            y revise el documento antes de enviarlo.
-          </p>
+        <div className="brand">
+          <img className="brand-logo" src="/logo.svg" alt="" aria-hidden="true" width="48" height="48"/>
+          <div>
+          <span className="eyebrow">DOCUMENTOS ELECTRÓNICOS</span>
+          <h1>{tab==='convertir'?'Crear nota de crédito':tab==='envio'?'Integración y envío':'Consulta de documentos'}</h1>
+          <p>{tab==='convertir'
+            ?'Convierta una factura XML o TXT en una nota de crédito y revise el JSON generado.'
+            :tab==='envio'
+              ?'Obtenga el token del servicio y envíe el documento JSON a la URL de integración.'
+              :'Consulte el estado de un documento electrónico y obtenga su KUDE en PDF.'}</p>
+          </div>
         </div>
 
         <div className="header-actions">
@@ -1214,7 +1214,7 @@ function App(){
             <h2>Consultar documento electrónico</h2>
             <p className="hint">Se usa el token obtenido en «Integración y envío». La consulta se envía como POST al servicio de este cliente.</p>
             <label>URL de consulta
-              <input value={consultUrl} onChange={e=>{consultId.current++;setConsultUrl(e.target.value);setConsultResult(null);setConsultError('');setKudeUrl('');setShowTicket(false)}} placeholder={sendUrl||'https://dominio/api/operation'}/>
+              <input value={consultUrl} onChange={e=>{consultId.current++;setConsultUrl(e.target.value);setConsultResult(null);setConsultError('');setKudeUrl('')}} placeholder={sendUrl||'https://dominio/api/operation'}/>
               <small>{!consultUrl&&sendUrl?'Se usará la URL de envío mientras este campo esté vacío.':'Ingrese la URL /api/operation del cliente.'}</small>
             </label>
             <div className="consult-fields">
@@ -1242,7 +1242,7 @@ function App(){
             </div>
             <div className="consult-actions">
               <button className="primary" disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('2')}>{consultBusy?'Consultando…':'Consultar estado'}</button>
-              <button disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('4')}>Obtener KUDE (PDF)</button>
+              <button disabled={consultBusy||!token.trim()} onClick={()=>consultDocument('4')}>{consultBusy?'Consultando…':'Visualizar KUDE'}</button>
             </div>
             {!token.trim()&&<small>Primero genere un token en «Integración y envío».</small>}
             {consultError&&<div role="alert" className="consult-alert">{consultError}</div>}
@@ -1258,22 +1258,12 @@ function App(){
               {(consultResult.data.response?.DE?.CDC||consultResult.data.CDC)&&<p><strong>CDC:</strong> {String(consultResult.data.response?.DE?.CDC||consultResult.data.CDC)}</p>}
               {consultResult.data.response?.DE?.Retorno?.Mensaje&&<p><strong>Respuesta SIFEN:</strong> {String(consultResult.data.response.DE.Retorno.Mensaje)}</p>}
               {consultResult.data.message&&<p><strong>Mensaje:</strong> {typeof consultResult.data.message==='string'?consultResult.data.message:JSON.stringify(consultResult.data.message)}</p>}
-              {consultResult.operation==='2'&&showTicket&&<div className="ticket-actions"><button type="button" className="primary" onClick={()=>window.print()}>Imprimir ticket</button></div>}
-              {showTicket&&consultResult.operation==='2'&&<section className="ticket-print" aria-label="Ticket de consulta">
-                <h3>Consulta de documento electrónico</h3>
-                <p className="ticket-subtitle">Comprobante de consulta · No es documento fiscal</p>
-                <div><strong>Consultado:</strong> {new Date().toLocaleString('es-PY')}</div>
-                <div><strong>Documento:</strong> {docType} · {docEst}-{docPoint}-{docNumber}</div>
-                {docSeries&&<div><strong>Serie:</strong> {docSeries}</div>}
-                <div><strong>HTTP:</strong> {consultResult.http}</div>
-                {consultResult.data.response?.Estado&&<div><strong>Estado:</strong> {String(consultResult.data.response.Estado)}</div>}
-                {consultResult.data.response?.FechaRegistro&&<div><strong>Fecha de registro:</strong> {String(consultResult.data.response.FechaRegistro)}</div>}
-                {(consultResult.data.response?.DE?.CDC||consultResult.data.CDC)&&<div className="ticket-cdc"><strong>CDC:</strong> {String(consultResult.data.response?.DE?.CDC||consultResult.data.CDC)}</div>}
-                {consultResult.data.response?.DE?.Retorno?.Mensaje&&<div><strong>Mensaje:</strong> {String(consultResult.data.response.DE.Retorno.Mensaje)}</div>}
-                <p className="ticket-footer">Datos informados por el servicio de consulta.</p>
-              </section>}
               <details><summary>Ver respuesta JSON completa</summary><pre>{JSON.stringify(consultResult.data,null,2)}</pre></details>
-              {kudeUrl&&<div className="kude-preview"><h3>Vista previa del KUDE</h3><a href={kudeUrl} download={`KUDE_${docEst}-${docPoint}-${docNumber}.pdf`}>Descargar KUDE en PDF</a><iframe title="KUDE del documento" src={kudeUrl}/></div>}
+              {kudeUrl&&<div className="kude-preview">
+                <h3>KUDE del documento</h3>
+                <iframe title="Vista previa del KUDE" src={`${kudeUrl}#toolbar=0`}/>
+                <a className="kude-download" href={kudeUrl} download={`KUDE_${docEst}-${docPoint}-${docNumber}.pdf`}>Descargar KUDE</a>
+              </div>}
               {consultResult.operation==='4'&&!kudeUrl&&consultResult.data.status==='success'&&<small>El servicio respondió correctamente, pero no devolvió un PDF en el campo kude.</small>}
             </>}
           </div>
