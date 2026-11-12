@@ -95,8 +95,7 @@ export function parseFacturaXml(source, filename = 'Factura XML') {
   const issuer = copyFields(de, 'gDatGralOpe/gEmis', issuerFields);
   const receptor = copyFields(de, 'gDatGralOpe/gDatRec', receptorFields);
   const items = all(de, 'gCamItem').map((item, index) => {
-    const line = copyFields(item, '', ['dCodInt', 'dDesProSer', 'cUniMed', 'dDesUniMed']);
-    // copyFields construye "/dCodInt" cuando prefix=""; leer directamente.
+    const line = {};
     for (const field of ['dCodInt', 'dDesProSer', 'cUniMed', 'dDesUniMed']) {
       const value = get(item, field);
       if (value) line[field] = value;
@@ -165,6 +164,11 @@ export function buildRemision(invoices, principalCdc, quantities, form) {
   const arrival = dateOnly(form.endDate, 'fin del traslado');
   if (arrival < departure) throw Error('La fecha de fin no puede ser anterior al inicio.');
   const date = dateOnly(form.issueDate, 'fecha de emisión');
+  if (date > departure) throw Error('La NR debe emitirse antes o al inicio del traslado.');
+  const hour = required(form.issueTime, 'hora de emisión');
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(hour)) {
+    throw Error('Hora de emisión inválida (HH:MM:SS).');
+  }
   const km = required(form.km, 'kilómetros estimados');
   if (!/^[0-9]{1,5}$/.test(km) || Number(km) < 1) {
     throw Error('Kilómetros: ingrese un valor entre 1 y 99999.');
@@ -173,7 +177,7 @@ export function buildRemision(invoices, principalCdc, quantities, form) {
   for (const inv of invoices) {
     for (const item of inv.items) {
       const quantity = quantities[item.rowId] === undefined ? item.dCantProSer : String(quantities[item.rowId]).trim();
-      if (quantity === '0' || quantity === '0.0' || quantity === '') continue; // omitido manualmente
+      if (/^0+(?:\.0+)?$/.test(quantity) || quantity === '') continue; // omitido manualmente
       if (scaled(quantity, 'cantidad para ' + item.dCodInt) > scaled(item.dCantProSer, 'cantidad original')) {
         throw Error('La cantidad trasladada supera la factura para ' + item.dCodInt + ' (' + inv.filename + ').');
       }
@@ -206,6 +210,9 @@ export function buildRemision(invoices, principalCdc, quantities, form) {
     dDesRespEmiNR: 'Emisor de la factura',
     dKmR: km
   };
+  if (motivo === '99' && (gCamNRE.dDesMotEmiNR.length < 5 || gCamNRE.dDesMotEmiNR.length > 60)) {
+    throw Error('Otro motivo debe tener entre 5 y 60 caracteres.');
+  }
   const gTransp = {
     iTipTrans: carrierType,
     dDesTipTrans: carrierType === '1' ? 'Propio' : 'Tercero',
@@ -231,7 +238,7 @@ export function buildRemision(invoices, principalCdc, quantities, form) {
     dEst: digits(form.establishment, 3, 'establecimiento'),
     dPunExp: digits(form.point, 3, 'punto de expedición'),
     dNumDoc: digits(form.number, 7, 'número de remisión'),
-    dFeEmiDE: date + 'T' + required(form.issueTime, 'hora de emisión'),
+    dFeEmiDE: date + 'T' + (hour.length === 5 ? hour + ':00' : hour),
     ...principal.receptor,
     gCamNRE,
     Detalles: details,
