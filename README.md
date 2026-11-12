@@ -32,3 +32,20 @@ Desde la CLI también podés publicar desde esta carpeta con `npx vercel` y, cua
 **Envío:** las funciones `/api/send` aceptan únicamente HTTPS y el dominio configurado. Devuelven la respuesta HTTP del servicio sin almacenar credenciales. El servicio de destino debe ser accesible desde los servidores de Vercel. La web queda accesible a quien tenga la URL; si contiene datos sensibles o se usará por varios usuarios, configurá protección de acceso antes de compartirla.
 
 **Comparación:** se comprobó la salida JSON contra el código Java original con una factura exenta, tanto NC completa como parcial por monto. Probá tus XML y combinaciones de IVA en la vista previa antes de enviar documentos reales.
+
+## Nueva pestaña: Nota de remisión (NR) multifactura
+
+La pestaña **Crear nota de remisión** es independiente del flujo existente de notas de crédito (NC).
+
+1. Seleccioná varias facturas XML/TXT con formato SIFEN (`iTiDE=1`). Podés cargar archivos, una carpeta o pegar un XML.
+2. Marcá las facturas que entran en el traslado y elegí **una factura principal**. La principal aporta el receptor y los datos predeterminados de origen/destino.
+3. Las demás facturas aportan sus productos; cada CDC queda en `DocumentosAsociados`. No se borran las referencias.
+4. Podés editar la cantidad a remitir por línea (usar 0 para excluirla), sin superar la cantidad de la factura. Los productos permanecen separados por factura, incluso si comparten código.
+5. Completá numeración, motivo, fechas, salida/entrega, vehículo, transportista y chofer.
+6. Generá y descargá un **borrador JSON de NR** con `iTiDE=7`, `gCamNRE`, `gTransp`, `Detalles` y `DocumentosAsociados`. No lleva precios, IVA ni subtotales de la venta.
+
+**Validaciones:** rechazo de CDC repetidos, múltiples emisores o receptores distintos, cantidades inválidas o mayores a las facturadas y campos obligatorios vacíos. Hasta 99 facturas asociadas, 999 líneas de mercadería. Los XML se procesan localmente en el navegador.
+
+**Alcance importante:** este módulo **no emite documentos en SIFEN**. El JSON es un borrador estructurado, no un XML firmado. El endpoint actual `/api/send` conserva su contrato de NC y no se conectó a NR para evitar enviar una estructura incompatible. Antes de producción hace falta adaptar el JSON al contrato preciso de la API emisora, su numeración/timbrado, generar CDC, firmar XML, enviar, verificar aprobación SIFEN y obtener KuDE.
+
+**Pruebas del consolidador:** `npm test`. **Compilar interfaz:** `npm run build`.

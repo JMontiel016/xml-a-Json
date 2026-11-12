@@ -1,0 +1,24 @@
+.nr-layout{display:grid;grid-template-columns:minmax(280px,1fr) minmax(420px,2fr);gap:16px;align-items:start;padding:16px 0}
+.nr-layout .card{min-width:0}
+.nr-sources{grid-column:1}
+.nr-configuration{grid-column:2;grid-row:1 / span 2}
+.nr-products{grid-column:1 / -1}
+.nr-output{grid-column:1 / -1}
+.nr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin:12px 0}
+.nr-layout label{display:flex;flex-direction:column;gap:5px;min-width:0}
+.nr-layout input,.nr-layout select,.nr-layout textarea{max-width:100%;min-width:0}
+.nr-upload{margin:10px 0}
+.nr-upload input{margin-top:4px}
+.nr-invoices{max-height:310px;overflow:auto;margin:14px 0;display:grid;gap:8px}
+.nr-invoice{display:flex;gap:12px;align-items:flex-start;padding:10px;border:1px solid var(--border, #9da3a955);border-radius:8px}
+.nr-invoice label{flex-direction:row;align-items:center;white-space:nowrap;font-size:.82rem;gap:4px}
+.nr-invoice-details{display:grid;gap:3px;overflow-wrap:anywhere;min-width:0}
+.nr-invoice-details small{font-size:.76rem}
+.nr-table-wrap{overflow:auto;max-width:100%}
+.nr-table{border-collapse:collapse;width:100%;min-width:710px;font-size:.91rem}
+.nr-table th,.nr-table td{border-bottom:1px solid var(--border, #9da3a955);text-align:left;padding:8px}
+.nr-table td input{width:115px;min-width:105px}
+.nr-message{font-weight:600;overflow-wrap:anywhere}
+.nr-json{width:100%;font-family:ui-monospace,SFMono-Regular,monospace;white-space:pre;min-height:330px;margin-top:12px}
+.nr-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+@media(max-width:950px){.nr-layout{display:block}.nr-layout>.card{margin:0 0 16px}.nr-grid{grid-template-columns:repeat(auto-fit,minmax(165px,1fr))}}

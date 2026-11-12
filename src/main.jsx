@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import './style.css';
 import './theme.css';
 import {convertXml} from './conversion.js';
+import Remision from './Remision.jsx';
 
 const reasons=['Devolución y Ajuste de precios','Devolución','Descuento','Bonificación','Crédito incobrable','Recupero de costo','Recupero de gasto','Ajuste de precio'];
 
@@ -673,9 +674,11 @@ function App(){
           <img className="brand-logo" src="/logo.svg" alt="" aria-hidden="true" width="48" height="48"/>
           <div>
           <span className="eyebrow">DOCUMENTOS ELECTRÓNICOS</span>
-          <h1>{tab==='convertir'?'Crear nota de crédito':tab==='envio'?'Integración y envío':'Consulta de documentos'}</h1>
+          <h1>{tab==='convertir'?'Crear nota de crédito':tab==='remision'?'Crear nota de remisión':tab==='envio'?'Integración y envío':'Consulta de documentos'}</h1>
           <p>{tab==='convertir'
             ?'Convierta una factura XML o TXT en una nota de crédito y revise el JSON generado.'
+            :tab==='remision'
+              ?'Prepare una nota de remisión a partir de varias facturas XML y consolide sus mercaderías.'
             :tab==='envio'
               ?'Obtenga el token del servicio y envíe el documento JSON a la URL de integración.'
               :'Consulte el estado de un documento electrónico y obtenga su KUDE en PDF.'}</p>
@@ -689,6 +692,12 @@ function App(){
             onClick={()=>setTab('convertir')}
           >
             Crear nota de crédito
+          </button>
+          <button
+            className={tab==='remision'?'active':''}
+            onClick={()=>setTab('remision')}
+          >
+            Crear nota de remisión
           </button>
           <button
             className={tab==='envio'?'active':''}
@@ -709,7 +718,7 @@ function App(){
         </button>
       </header>
 
-      {tab==='convertir'?(
+      {tab==='remision'?<Remision/>:tab==='convertir'?(
         <main>
           <aside className="card folder">
             <div className="title">
